@@ -1,7 +1,7 @@
 # Artifacts are downloaded from the Hugging Face dataset, not committed.
 data/
 results/
-figures/
+figures/*
 logs/
 __pycache__/
 *.pyc
