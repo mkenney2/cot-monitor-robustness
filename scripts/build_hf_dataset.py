@@ -105,6 +105,7 @@ def pool_attacked(source):
     import pandas as pd
 
     source = Path(source)
+    sys.path.insert(0, str(source / "src"))   # 06_arm_probe imports `common`
     spec = importlib.util.spec_from_file_location(
         "m06", source / "src" / "06_arm_probe.py")
     m06 = importlib.util.module_from_spec(spec)
