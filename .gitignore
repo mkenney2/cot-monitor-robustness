@@ -1,0 +1,14 @@
+# Artifacts are downloaded from the Hugging Face dataset, not committed.
+data/
+results/
+figures/
+logs/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+hf_staging/
+
+# Keep the headline figures used by the README.
+!figures/degradation_with_cis.png
+!figures/failure_independence.png
+!figures/clean_leaderboard.png

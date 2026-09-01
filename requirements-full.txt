@@ -1,0 +1,11 @@
+# Generation tier — full pipeline (src/00-09) on a GPU pod.
+# Exact pins used on the original RunPod H200 are in scripts/setup_pod.sh;
+# do not upgrade them blindly (see that file for rationale).
+-r requirements.txt
+torch
+transformers
+vllm
+datasets
+accelerate
+safetensors
+openai            # OpenRouter-compatible client for judge/attacker calls

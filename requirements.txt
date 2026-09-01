@@ -1,0 +1,10 @@
+# Analysis tier — enough to run notebooks/reproduce_results.ipynb (CPU only).
+numpy
+pandas
+pyarrow
+scikit-learn
+scipy
+matplotlib
+pyyaml
+huggingface_hub
+joblib
