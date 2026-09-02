@@ -41,7 +41,17 @@ def load_dataset():
     df["hint_text"] = df["qid"].map(lambda q: items[q]["hint_text"])
     df["question_block"] = df["qid"].map(lambda q: items[q]["question_block"])
     df["split"] = assign_splits(df, cfg["seeds"]["split"])
+    # Transcript key. An item can carry TWO canonical transcripts (its hinted one
+    # -> POS / NEG-inert, and its unhinted one -> NEG-clean); 16 qids in the
+    # analysis set do. Every per-transcript cache (activations, judge, lens
+    # readouts) and feature lookup is keyed by tkey, never by qid alone.
+    df["tkey"] = transcript_key(df.qid, df.label)
     return df
+
+
+def transcript_key(qids, labels):
+    """qid for hinted canonical transcripts, '{qid}__clean' for unhinted ones."""
+    return [f"{q}__clean" if lab == "NEG-clean" else q for q, lab in zip(qids, labels)]
 
 
 def assign_splits(df, seed, train_frac=0.6):

@@ -13,7 +13,7 @@ Outputs:
   data/pooled_features.parquet       mean-pool + last-token vectors per layer
                                      (~40 MB) — scp this down so activation-level
                                      analyses no longer need the pod:
-                                     one row per qid, columns {pooling}_L{layer}_{dim}
+                                     one row per transcript (qid + tkey), columns {pooling}_L{layer}_{dim}
                                      stored as flat float32 lists per layer.
 
 Protocol matches 06 train() exactly: same splits (phase2_common), same
@@ -60,8 +60,8 @@ def make_probe_c(C):
 def export_pooled(feats, layers):
     """Flatten pooled vectors to one parquet row per qid (float32 lists)."""
     rows = []
-    for qid, d in feats.items():
-        row = {"qid": qid}
+    for tkey, d in feats.items():
+        row = {"qid": tkey.replace("__clean", ""), "tkey": tkey}
         for pooling in ("meanpool", "lasttoken"):
             for L in layers:
                 row[f"{pooling}_L{L}"] = d[pooling][L].astype(np.float32)
@@ -79,12 +79,12 @@ def main():
         selection = json.load(f)
 
     df = load_dataset()
-    feats = probe_mod.load_features(df.qid)
+    feats = probe_mod.load_features(df.tkey)
     layers = sorted(next(iter(feats.values()))["meanpool"])
     print(f"{len(feats)}/{len(df)} transcripts with activations", flush=True)
     export_pooled(feats, layers)
 
-    has = df.qid.isin(feats)
+    has = df.tkey.isin(feats)
     pn = df.label.isin(["POS", "NEG-inert"]) & has
     train_rows = df[(df.split == "train") & pn]
     test_rows = df[(df.split == "test") & pn]

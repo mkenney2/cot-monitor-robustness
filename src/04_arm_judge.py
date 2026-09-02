@@ -13,7 +13,7 @@ Two variants, both run:
 3 judge samples per transcript, fetched as 3 SEPARATE requests (OpenRouter
 providers ignore n>1); score = mean of parsed samples; unparseable samples are
 recorded as failed, never invented. Raw samples checkpoint to
-data/rollouts/judge_raw.jsonl keyed (qid, variant, k) — resume-safe (rule 4).
+data/rollouts/judge_raw.jsonl keyed (tkey, variant, k) — resume-safe (rule 4).
 
 Outputs: results/scores_clean.parquet rows for both arms (via phase2_common),
 results/auc_{arm}_clean.json, review/04_judge_sample.md (seeded, rule 3).
@@ -90,13 +90,14 @@ def load_cache():
     (one row per (qid, variant) with a 'samples' list) migrate to sample k=0."""
     cache = {}
     for r in read_jsonl(RAW_CACHE):
+        key = r.get("tkey", r["qid"])   # transcript key (qid or qid__clean)
         if "samples" in r:
-            cache[(r["qid"], r["variant"], 0)] = {
-                "qid": r["qid"], "variant": r["variant"], "k": 0,
+            cache[(key, r["variant"], 0)] = {
+                "qid": r["qid"], "tkey": key, "variant": r["variant"], "k": 0,
                 "judge_model": r["judge_model"],
                 "text": r["samples"][0], "score": r["scores"][0]}
         else:
-            cache[(r["qid"], r["variant"], r["k"])] = r
+            cache[(key, r["variant"], r["k"])] = r
     return cache
 
 
@@ -112,7 +113,7 @@ def run_judge(cfg, df):
     todo = [(row, variant, k)
             for _, row in df.iterrows() for variant in VARIANTS
             for k in range(n_samples)
-            if (row["qid"], variant, k) not in cached]
+            if (row["tkey"], variant, k) not in cached]
     print(f"judge: {len(cached)} samples cached, {len(todo)} to fetch", flush=True)
     if not todo:
         return cached
@@ -123,14 +124,14 @@ def run_judge(cfg, df):
     client = openrouter_client(cfg)
 
     def on_result(key, texts):
-        qid, variant, k = key
+        tkey, variant, k = key
         if texts is None:
             return  # all retries failed; retried on next run
         append_jsonl(RAW_CACHE, {
-            "qid": qid, "variant": variant, "k": k, "judge_model": judge,
-            "text": texts[0], "score": parse_score(texts[0])})
+            "qid": tkey.replace("__clean", ""), "tkey": tkey, "variant": variant, "k": k,
+            "judge_model": judge, "text": texts[0], "score": parse_score(texts[0])})
 
-    jobs = [((row["qid"], variant, k),
+    jobs = [((row["tkey"], variant, k),
              [{"role": "user", "content": judge_prompt(cfg, row, variant)}])
             for row, variant, k in todo]
     asyncio.run(chat_batch(
@@ -145,7 +146,7 @@ def scores_frame(df, cache, variant, n_samples):
     """qid/label/split/score for one variant. NaN score if all samples failed."""
     rows = []
     for _, row in df.iterrows():
-        recs = [cache.get((row["qid"], variant, k)) for k in range(n_samples)]
+        recs = [cache.get((row["tkey"], variant, k)) for k in range(n_samples)]
         parsed = [r["score"] for r in recs if r and r["score"] is not None]
         rows.append({
             "qid": row["qid"], "label": row["label"], "split": row["split"],
@@ -174,7 +175,7 @@ def review_dump(cfg, df, cache):
             f"**Canonical CoT ({row['canonical_condition']}):**\n```\n{row['canonical_cot']}\n```\n",
         ]
         for variant in VARIANTS:
-            recs = {k: r for k, r in ((k, cache.get((row["qid"], variant, k)))
+            recs = {k: r for k, r in ((k, cache.get((row["tkey"], variant, k)))
                                       for k in range(3)) if r}
             if not recs:
                 lines.append(f"**{variant}:** NOT SCORED (requests failed)\n")

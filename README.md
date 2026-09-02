@@ -17,19 +17,20 @@ correlated per item.
 
 | Monitor | Channel | Clean AUC | paraphrase | launder | recruit |
 |---|---|---|---|---|---|
-| LLM judge (hint-blind) | text | 0.895 | 0.886 | 0.893 | **0.635** |
+| LLM judge (hint-blind) | text | 0.917 | 0.886 | 0.893 | **0.635** |
 | TF-IDF + logistic reg. | text | 0.588 | 0.539 | 0.407 | 0.457 |
-| Linear probe (layer 48 mean-pool) | activations | 0.735 | 0.738 | 0.689 | 0.650 |
-| J-Lens hint-salience | activations | 0.500 | 0.506 | 0.509 | 0.588 |
+| Linear probe (layer 48 mean-pool) | activations | 0.736 | 0.746 | 0.696 | 0.630 |
+| J-Lens hint-salience (layers 16/32/48) | activations | 0.577 | 0.614 | 0.552 | 0.568 |
+| J-Lens hint-salience (layers 56/60/62) | activations | 0.503 | 0.553 | 0.475 | 0.519 |
 
 - **The text judge is robust to rewording and laundering but breaks under
   social engineering**: `recruit` rewrites (which address the monitor
   directly with verification claims and authority framing) cut its AUC from
-  0.895 to 0.635. The probe barely moves — injected text is just more tokens
-  to the activations.
+  0.917 to 0.635. The probe moves much less (0.736 to 0.630) — injected text
+  is just more tokens to the activations.
 - **Text and activation failures are roughly independent per item**
-  (phi ≈ +0.18 / −0.06 / +0.04 across the three attacks, all Fisher p > 0.4):
-  OR-ing the two channels recovers 9–17 points of catch rate over the judge
+  (phi ≈ +0.09 / +0.03 / +0.10 for paraphrase / launder / recruit, all Fisher
+  p > 0.7): OR-ing the two channels recovers 8–17 points of catch rate over the judge
   alone. Defense-in-depth is supported — with the caveat that at n ≈ 35 per
   attack only large correlations were detectable.
 - Mandatory controls: shuffled-label probe at chance; a presence-vs-use
@@ -58,6 +59,23 @@ tables from the raw score parquets, asserts they match the published JSON
 artifacts to numerical precision, refits the activation probe from pooled
 features, and regenerates the figures.
 
+A second notebook, `notebooks/jlens_readout_audit.ipynb`, opens up the
+J-Lens arm (the one that scored at or near chance): it loads the saved per-position
+top-10 vocabulary readouts for a seeded 20-per-class sample of transcripts
+(`core/jlens_readouts/`, written by `src/19_jlens_readouts.py`), checks
+they reproduce the published hint-salience scores, and audits what
+the lens actually surfaces on POS vs NEG transcripts — lens sanity by layer,
+hint-letter salience at positions the text never mentions it, vocabulary
+enrichment against a permutation null, concept lexicons, and a transcript
+viewer. CPU only, no tokenizer or model needed. Its companion
+`notebooks/jlens_readout_audit_late.ipynb` runs the same audit on the
+**late-layer rerun** of the arm (layers 56/60/62, `src/22_jlens_late.py`):
+`src/21_jlens_anchor_check.py` showed Qwen 3.6 27B is undecodable at
+16/32/48 (next-token top-10 hit 4–8%) and only becomes readable from
+layer ~56 (40%) to the lens anchor 62 (75%). Re-run there, J-Lens is still
+at chance (clean AUC 0.503, CI 0.38–0.61), so the null is a real negative
+for the unsupervised readout rather than a wrong-layer artifact.
+
 Dataset: [`mjkenney/cot-monitor-robustness`](https://huggingface.co/datasets/mjkenney/cot-monitor-robustness)
 (questions, hints, labels, canonical + attacked transcripts, judge scores
 and justifications, pooled activations, all result artifacts; full per-token
@@ -81,13 +99,37 @@ and an OpenRouter key for the judge (Claude Opus 4.5) and attacker
 | `09_score_attacked.py` | re-run all arms frozen on surviving rewrites | mixed |
 | `10_analysis.py` | degradation matrix + failure correlation (phi) | CPU |
 | `11`–`18` | controls, learning curve, concept arm, figures, sensitivity | CPU |
+| `23_dupfix_migrate.py` | one-off: re-key activation / judge / lens caches by transcript (`tkey`) and verify every file against its transcript | CPU |
+| `19_jlens_readouts.py` | save the per-position J-Lens top-k readouts as an artifact (audit notebook input) | CPU (slow) or GPU |
+| `20_jlens_logitlens_check.py` | diagnostic: J-Lens vs plain logit-lens next-token hit rate on the same activations | CPU (slow) or GPU |
+| `21_jlens_anchor_check.py` | pod diagnostic: readout vs the model's own logits at every depth; fixes the layer convention | GPU |
+| `22_jlens_late.py` | J-Lens rerun at layers 56/60/62 (cache, score, attacked re-score, analysis) as arms `jlens_late` / `jlens_llm_late` | GPU + API |
 
 Every stage writes artifacts to `results/` and human-readable random samples
 to `review/`; analysis scripts only ever read artifacts. All seeds are in
 `config.yaml`. `scripts/setup_pod.sh` records the exact pod environment.
 
 The study design was written down before the data came in:
-[`docs/preregistration.md`](docs/preregistration.md).
+[`docs/preregistration.md`](docs/preregistration.md). Technical reports
+(every number traced to an artifact): [`docs/study_report.md`](docs/study_report.md)
+(consolidated), [`docs/jlens_diagnosis.md`](docs/jlens_diagnosis.md) (why the
+J-Lens arm was at chance, late-layer rerun, readout audits),
+[`docs/probe_c_sensitivity.md`](docs/probe_c_sensitivity.md),
+[`docs/dupfix_diff.md`](docs/dupfix_diff.md) (data-integrity fix, before/after),
+[`docs/hint_types_figure.md`](docs/hint_types_figure.md).
+
+## Data-integrity note (2026-09-02)
+
+16 of the 284 items in the analysis set carry two canonical transcripts (a
+hinted one → POS or NEG-inert, and an unhinted one → NEG-clean). The
+original pipeline keyed its activation, judge and lens caches by item id
+alone, so each pair shared one cached transcript. Every cache is now keyed
+by transcript (`tkey`, see `src/23_dupfix_migrate.py`), the 32 affected
+transcripts were re-cached / re-judged, and all downstream stages were
+re-run; the numbers above are the corrected ones. The change moved the
+hint-blind judge from 0.895 to 0.917 and left the probe at 0.735 → 0.736;
+the before/after diff of every artifact is in
+[`docs/dupfix_diff.md`](docs/dupfix_diff.md).
 
 ## Limitations (stated up front)
 

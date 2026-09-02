@@ -5,7 +5,8 @@ Stages:
   python src/06_arm_probe.py cache_attacked # same, over rewritten transcripts (GPU)
   python src/06_arm_probe.py train          # probes + controls, no GPU
 
-cache -> data/activations/{qid}.npz   one file per canonical transcript:
+cache -> data/activations/{tkey}.npz  one file per canonical transcript
+         (tkey = qid for hinted transcripts, qid__clean for unhinted ones):
            layer_{L}  [span_len, hidden] float16 residual stream over the CoT
                       token span only, for each captured layer L
            token_ids  [span_len] int32 token ids of the span
@@ -64,7 +65,7 @@ def build_chat(cfg, row):
 def cache(cfg):
     tokenizer, model, layers = load_model(cfg)
     df = load_dataset()
-    run_cache(cfg, tokenizer, model, layers, df, ACT_DIR, lambda r: r["qid"])
+    run_cache(cfg, tokenizer, model, layers, df, ACT_DIR, lambda r: r["tkey"])
 
 
 def cache_one(cfg, tokenizer, model, layers, row, out_path):
@@ -95,7 +96,8 @@ def cache_one(cfg, tokenizer, model, layers, row, out_path):
     arrays = {f"layer_{L}": out.hidden_states[L][0, span[0]:span[1]]
               .to(torch.float16).cpu().numpy() for L in layers}
     del out
-    meta = {"qid": row["qid"], "layers": layers, "prompt_len": prompt_len,
+    meta = {"qid": row["qid"], "tkey": row.get("tkey", row["qid"]), "layers": layers,
+            "prompt_len": prompt_len,
             "span": list(span), "n_full_tokens": len(full_ids),
             "model": cfg["models"]["policy"]}
     # np.savez appends '.npz' to names lacking it — the tmp name must already end
@@ -201,7 +203,7 @@ def make_probe():
 
 
 def stack(df_rows, feats, pooling, layer):
-    X = np.stack([feats[q][pooling][layer] for q in df_rows.qid])
+    X = np.stack([feats[q][pooling][layer] for q in df_rows.tkey])
     y = (df_rows.label == "POS").astype(int).to_numpy()
     return X, y
 
@@ -214,8 +216,8 @@ def train(cfg):
     cv_seed = cfg["seeds"].get("probe_cv", 109)
 
     df = load_dataset()
-    feats = load_features(df.qid)
-    missing = sorted(q for q in df.qid if q not in feats)
+    feats = load_features(df.tkey)
+    missing = sorted(q for q in df.tkey if q not in feats)
     if missing:
         print(f"WARNING: {len(missing)} transcripts have no cached activations "
               f"(scored NaN): {missing[:10]}{'...' if len(missing) > 10 else ''}",
@@ -224,7 +226,7 @@ def train(cfg):
     print(f"{len(feats)}/{len(df)} transcripts with activations, layers {layers}",
           flush=True)
 
-    has = df.qid.isin(feats)
+    has = df.tkey.isin(feats)
     train_rows = df[(df.split == "train") & df.label.isin(["POS", "NEG-inert"]) & has]
     print(f"train rows (POS vs NEG-inert): {train_rows.label.value_counts().to_dict()}",
           flush=True)
@@ -252,7 +254,7 @@ def train(cfg):
         out = df[["qid", "label", "split"]].copy()
         out["score"] = np.nan
         scorable = df[has]
-        X_all = np.stack([feats[q][pooling][best] for q in scorable.qid])
+        X_all = np.stack([feats[q][pooling][best] for q in scorable.tkey])
         out.loc[scorable.index, "score"] = probe.predict_proba(X_all)[:, 1]
         out["layer"] = best
         save_scores(arm, out)
@@ -279,7 +281,7 @@ def controls(cfg, df, feats, train_rows, primary, cv_seed):
     from sklearn.metrics import roc_auc_score
 
     best, probe = primary
-    has = df.qid.isin(feats)
+    has = df.tkey.isin(feats)
     test = df[(df.split == "test") & has]
 
     # (i) shuffled-label probe on the primary layer — must land near AUC 0.5.
@@ -289,7 +291,7 @@ def controls(cfg, df, feats, train_rows, primary, cv_seed):
     shuf_probe = make_probe()
     shuf_probe.fit(X_tr, y_shuf)
     t = test[test.label.isin(["POS", "NEG-inert"])]
-    X_t = np.stack([feats[q]["meanpool"][best] for q in t.qid])
+    X_t = np.stack([feats[q]["meanpool"][best] for q in t.tkey])
     shuf_auc = float(roc_auc_score((t.label == "POS").astype(int),
                                    shuf_probe.predict_proba(X_t)[:, 1]))
     print(f"[control i] shuffled-label probe test AUC = {shuf_auc:.3f} "
@@ -302,7 +304,7 @@ def controls(cfg, df, feats, train_rows, primary, cv_seed):
         print("[control ii] cannot run: missing a NEG class in the test split",
               flush=True)
     else:
-        X_n = np.stack([feats[q]["meanpool"][best] for q in negs.qid])
+        X_n = np.stack([feats[q]["meanpool"][best] for q in negs.tkey])
         presence_auc = float(roc_auc_score((negs.label == "NEG-inert").astype(int),
                                            probe.predict_proba(X_n)[:, 1]))
         print(f"[control ii] probe AUC NEG-inert vs NEG-clean = {presence_auc:.3f}",

@@ -53,12 +53,12 @@ def main():
     seed = cfg["seeds"]["bootstrap"]
 
     df = load_dataset()
-    feats = m06.load_features(df.qid)
-    has = df.qid.isin(feats)
+    feats = m06.load_features(df.tkey)
+    has = df.tkey.isin(feats)
     df = df[has].reset_index(drop=True)
 
     def mat(rows):
-        return np.stack([feats[q]["meanpool"][layer] for q in rows.qid])
+        return np.stack([feats[q]["meanpool"][layer] for q in rows.tkey])
 
     # Shared standardized space: scaler fit on ALL train rows (all 3 classes) so the
     # two directions live in the same geometry and cosine is meaningful.

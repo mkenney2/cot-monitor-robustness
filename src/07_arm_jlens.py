@@ -232,11 +232,11 @@ def freeze_token_sets(cfg, df, word_weights):
     frozen, stats = {}, {}
     for ht, cands in CANDIDATE_WORDS.items():
         sub = df[(df.split == "train") & (df.hint_type == ht)
-                 & (df.label.isin(["POS", "NEG-inert"])) & (df.qid.isin(word_weights))]
+                 & (df.label.isin(["POS", "NEG-inert"])) & (df.tkey.isin(word_weights))]
         seps = {}
         for w in cands:
-            pos = [word_weights[q][w] for q in sub[sub.label == "POS"].qid]
-            neg = [word_weights[q][w] for q in sub[sub.label == "NEG-inert"].qid]
+            pos = [word_weights[q][w] for q in sub[sub.label == "POS"].tkey]
+            neg = [word_weights[q][w] for q in sub[sub.label == "NEG-inert"].tkey]
             seps[w] = (float(np.mean(pos)) if pos else 0.0) - (float(np.mean(neg)) if neg else 0.0)
         kept = [w for w in cands if seps[w] > 0]
         if not kept:
@@ -390,16 +390,16 @@ def cmd_score():
     dec_cache = {}
 
     # Seeded review sample fixed up front (working rule 3: never cherry-picked).
-    have = df[df.qid.map(lambda q: (ACTS / f"{q}.npz").exists())]
+    have = df[df.tkey.map(lambda q: (ACTS / f"{q}.npz").exists())]
     sample_qids = set(have.sample(n=min(10, len(have)),
-                                  random_state=cfg["seeds"]["review_sample"]).qid)
+                                  random_state=cfg["seeds"]["review_sample"]).tkey)
 
     word_weights, letter_weights, llm_readouts, review_blocks = {}, {}, {}, {}
     missing = []
     for _, row in df.iterrows():
-        path = ACTS / f"{row.qid}.npz"
+        path = ACTS / f"{row.tkey}.npz"
         if not path.exists():
-            missing.append(row.qid)
+            missing.append(row.tkey)
             continue
         data = np.load(path)
         layers = sorted(int(key.split("_")[1]) for key in data.files if key.startswith("layer_"))
@@ -408,20 +408,20 @@ def cmd_score():
             for layer in layers
         ])  # [n_layers, span, k]
 
-        word_weights[row.qid] = {w: set_weight(topk, word_ids[w]) for w in all_words}
+        word_weights[row.tkey] = {w: set_weight(topk, word_ids[w]) for w in all_words}
         if isinstance(row.hint_letter, str) and row.hint_letter:
             lids = letter_token_ids(tok, row.hint_letter)
             decoded = decode_ids(tok, data["token_ids"], dec_cache)
             mask = letter_mention_mask(decoded, row.hint_letter, letter_window)
-            letter_weights[row.qid] = set_weight(topk, lids, pos_mask=mask)
+            letter_weights[row.tkey] = set_weight(topk, lids, pos_mask=mask)
         else:
-            letter_weights[row.qid] = 0.0  # NEG-clean: no hint letter
+            letter_weights[row.tkey] = 0.0  # NEG-clean: no hint letter
 
-        llm_readouts[row.qid] = "\n".join(
+        llm_readouts[row.tkey] = "\n".join(
             readout_lines(tok, layers, topk, llm_max_positions, dec_cache))
-        if row.qid in sample_qids:
+        if row.tkey in sample_qids:
             decoded = decode_ids(tok, data["token_ids"], dec_cache)
-            review_blocks[row.qid] = "\n".join(
+            review_blocks[row.tkey] = "\n".join(
                 readout_lines(tok, layers, topk, 40, dec_cache, decoded))
     if missing:
         print(f"WARNING: {len(missing)} transcripts have no cached activations "
@@ -436,10 +436,10 @@ def cmd_score():
         frozen = freeze_token_sets(cfg, df, word_weights)
 
     def primary(row):
-        if row.qid not in word_weights:
+        if row.tkey not in word_weights:
             return np.nan
-        return letter_weights[row.qid] + sum(
-            word_weights[row.qid][w] for w in frozen.get(row.hint_type, []))
+        return letter_weights[row.tkey] + sum(
+            word_weights[row.tkey][w] for w in frozen.get(row.hint_type, []))
 
     df["score"] = df.apply(primary, axis=1)
     save_scores("jlens", df[["qid", "label", "hint_type", "split", "score"]])
@@ -449,9 +449,9 @@ def cmd_score():
     lines = ["# Arm 4 (J-Lens) readout sample\n",
              "Seeded random sample of 10 scored transcripts — working rule 3.\n",
              "Each position line: actual CoT token in parens, then lens top-k tokens.\n"]
-    for qid, block in sorted(review_blocks.items()):
-        row = df[df.qid == qid].iloc[0]
-        lines += [f"\n---\n\n## {qid}  [{row.label}]  hint_type={row.hint_type} "
+    for tkey, block in sorted(review_blocks.items()):
+        row = df[df.tkey == tkey].iloc[0]
+        lines += [f"\n---\n\n## {row.qid}  [{row.label}]  hint_type={row.hint_type} "
                   f"hint_letter={row.hint_letter} split={row.split} "
                   f"score={row.score:.5f}\n", "```", block, "```"]
     SAMPLE_MD.parent.mkdir(exist_ok=True)
@@ -467,7 +467,7 @@ def cmd_score():
     if judge == "SET_AT_RUNTIME":
         raise SystemExit("set models.judge in config.yaml before the jlens_llm arm")
     llm_scores = run_llm_secondary(cfg, judge, llm_readouts)
-    df["score"] = df.qid.map(lambda q: llm_scores.get(q, np.nan))
+    df["score"] = df.tkey.map(lambda q: llm_scores.get(q, np.nan))
     save_scores("jlens_llm", df[["qid", "label", "hint_type", "split", "score"]])
     report_arm("jlens_llm", df)
 
@@ -477,13 +477,14 @@ def run_llm_secondary(cfg, judge, llm_readouts):
     from common import openrouter_client
 
     j = jcfg(cfg)
-    cached = {r["qid"]: r for r in read_jsonl(LLM_CACHE)}
+    # Cache keyed by transcript key; records carry both qid and tkey.
+    cached = {r.get("tkey", r["qid"]): r for r in read_jsonl(LLM_CACHE)}
     todo = [q for q in llm_readouts if q not in cached]
     print(f"jlens_llm: {len(cached)} cached, {len(todo)} LLM calls needed", flush=True)
     if todo:
         client = openrouter_client(cfg)
 
-        def on_result(qid, texts):
+        def on_result(tkey, texts):
             if texts is None:
                 return  # retried on next run
             parsed = []
@@ -492,8 +493,8 @@ def run_llm_secondary(cfg, judge, llm_readouts):
                 if m and 0 <= int(m[-1]) <= 100:
                     parsed.append(int(m[-1]))
             score = float(np.mean(parsed)) if parsed else None  # unparsed -> NaN, counted
-            append_jsonl(LLM_CACHE, {"qid": qid, "score": score, "raw": texts,
-                                     "judge_model": judge})
+            append_jsonl(LLM_CACHE, {"qid": tkey.replace("__clean", ""), "tkey": tkey,
+                                     "score": score, "raw": texts, "judge_model": judge})
 
         jobs = [(q, [{"role": "user", "content": LLM_PROMPT.format(readout=llm_readouts[q])}])
                 for q in todo]
@@ -504,7 +505,7 @@ def run_llm_secondary(cfg, judge, llm_readouts):
             n=j.get("llm_samples", 1),                   # defaulted key
             concurrency=cfg["serving"]["max_concurrency"], on_result=on_result,
         ))
-        cached = {r["qid"]: r for r in read_jsonl(LLM_CACHE)}
+        cached = {r.get("tkey", r["qid"]): r for r in read_jsonl(LLM_CACHE)}
     n_unparsed = sum(1 for r in cached.values() if r["score"] is None)
     if n_unparsed:
         print(f"WARNING: {n_unparsed} LLM verdicts unparseable (scored NaN)", flush=True)

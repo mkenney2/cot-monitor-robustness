@@ -237,7 +237,7 @@ def fig_probe_interrogation():
     attacks = ["paraphrase", "launder", "recruit"]
     x = np.arange(3)
     jac = [1 - div[a]["pos_jaccard_mean"] for a in attacks]  # divergence = 1 - overlap
-    dlt = [div[a]["probe_delta_mean"] for a in attacks]
+    dlt = [div[a]["probe_delta_score_mean"] for a in attacks]
     ax.bar(x - 0.18, jac, width=0.32, color="#9ec5f4", label="token divergence (1 − Jaccard)")
     ax.bar(x + 0.18, dlt, width=0.32, color=ACT_C, label="mean probe Δscore on POS")
     ax.axhline(0, color=MUT, lw=1)

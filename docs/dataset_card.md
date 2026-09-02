@@ -55,16 +55,19 @@ Kimi K3 via OpenRouter (adversarial CoT rewrites).
 | `scores_clean.parquet` | transcript × arm | suspicion score from each of the monitor arms, train/test split |
 | `scores_attacked.parquet` | transcript × arm × attack | frozen-monitor scores on attacked transcripts |
 | `judge_outputs.parquet` | transcript × sample | raw judge probabilities + one-sentence justifications |
-| `pooled_features.parquet` | transcript | mean-pool + last-token residual vectors, layers 16/32/48 |
+| `pooled_features.parquet` | transcript | mean-pool + last-token residual vectors, layers 16/32/48; keyed by `tkey` (qid for hinted transcripts, `qid__clean` for the unhinted NEG-clean transcript of the same item) |
 | `pooled_features_attacked.parquet` | transcript × attack | same, over rewritten transcripts |
 | `probe_model.joblib` | — | the frozen primary probe (StandardScaler + logistic regression, layer 48) |
 | `results/*.json` | — | every published number: AUCs + CIs, degradation matrix, failure correlation, controls |
 | `review/*.md` | — | the seeded random samples used for human label-checking |
+| `jlens_readouts/{qid}.npz` | transcript | J-Lens top-10 vocab ids per layer (16/32/48) × CoT position, plus the CoT token ids; `vocab.json` decodes ids, `token_ids_map.json` lists the arm's word/letter token ids (input to `notebooks/jlens_readout_audit.ipynb`; seeded 20/class sample) |
+| `jlens_readouts_late/{qid}.npz` | transcript | same, for the late-layer rerun (layers 56/60/62; `notebooks/jlens_readout_audit_late.ipynb`) |
 
 ### `activations-full/` (~17 GB clean + ~? GB attacked, optional)
 
-Per-token fp16 residual streams (`{qid}.npz` / `{qid}__{attack}.npz`):
-CoT-span activations at layers 16/32/48 plus token ids. Needed only to
+Per-token fp16 residual streams (`{tkey}.npz` / `{qid}__{attack}.npz`, where `tkey` is the qid or `qid__clean`):
+CoT-span activations at layers 16/32/48 plus token ids; `activations_late/`
+and `activations_late_attacked/` hold layers 56/60/62 for the J-Lens rerun. Needed only to
 reproduce the J-Lens arm and token-level analyses; the probe and all
 headline figures need only `pooled_features*.parquet`.
 

@@ -7,8 +7,12 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 hf_staging/
+# Notebook review dumps contain transcript text (GPQA-derived items live only
+# in the gated dataset, not in this repo).
+review/
 
 # Keep the headline figures used by the README.
 !figures/degradation_with_cis.png
 !figures/failure_independence.png
 !figures/clean_leaderboard.png
+!figures/hint_types.png

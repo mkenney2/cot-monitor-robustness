@@ -117,7 +117,7 @@ def score(cfg):
     layers = [int(x) for x in dz["_layers"]]
 
     df = load_dataset()
-    feats = m06.load_features(df.qid)
+    feats = m06.load_features(df.tkey)
     print(f"{len(feats)}/{len(df)} transcripts with cached activations", flush=True)
     train = df[(df.split == "train") & df.label.isin(["POS", "NEG-inert"])]
     cv_seed = cfg["seeds"]["bootstrap"]
@@ -131,7 +131,7 @@ def score(cfg):
         # concept; if a layer anti-correlates we still just report its AUC honestly.
         train_auc = {}
         for L in layers:
-            proj = _project(feats, train.qid, dz[f"{c}_L{L}"], L)
+            proj = _project(feats, train.tkey, dz[f"{c}_L{L}"], L)
             y = (train.label == "POS").astype(int).to_numpy()
             keep = ~np.isnan(proj)
             if keep.sum() and len(set(y[keep])) == 2:
@@ -140,21 +140,21 @@ def score(cfg):
         selection[c] = {"train_auc_by_layer": train_auc, "chosen_layer": best}
         print(f"[{c}] train AUC by layer {train_auc} -> L{best}", flush=True)
 
-        proj_all = _project(feats, df.qid, dz[f"{c}_L{best}"], best)
+        proj_all = _project(feats, df.tkey, dz[f"{c}_L{best}"], best)
         out = df[["qid", "label", "split"]].copy()
         out["score"] = proj_all
         out["layer"] = best
         save_scores(f"concept_{c}", out)
         report_arm(f"concept_{c}", out)
 
-        mu = np.nanmean(_project(feats, train.qid, dz[f"{c}_L{best}"], best))
-        sd = np.nanstd(_project(feats, train.qid, dz[f"{c}_L{best}"], best)) or 1.0
-        combined_z[c] = {q: (v - mu) / sd for q, v in zip(df.qid, proj_all)}
+        mu = np.nanmean(_project(feats, train.tkey, dz[f"{c}_L{best}"], best))
+        sd = np.nanstd(_project(feats, train.tkey, dz[f"{c}_L{best}"], best)) or 1.0
+        combined_z[c] = {q: (v - mu) / sd for q, v in zip(df.tkey, proj_all)}
 
     # Combined = mean of per-concept train-z-scored projections (equal weight).
     comb = df[["qid", "label", "split"]].copy()
     comb["score"] = [float(np.nanmean([combined_z[c][q] for c in CONCEPTS]))
-                     for q in df.qid]
+                     for q in df.tkey]
     comb["layer"] = -1
     save_scores("concept_combined", comb)
     report_arm("concept_combined", comb)

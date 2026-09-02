@@ -81,7 +81,8 @@ def score_judge(cfg, att):
     m04 = _load("04_arm_judge")
     judge = cfg["models"]["judge"]
     n = cfg["phase2"]["judge"]["samples_per_transcript"]
-    clean = clean_df().set_index("qid")
+    clean = clean_df()
+    clean = clean[clean.label != "NEG-clean"].set_index("qid")   # hinted rows: unique per qid
     cached = {(r["qid"], r["variant"], r["attack"], r["k"]): r
               for r in read_jsonl(JUDGE_CACHE)}
 

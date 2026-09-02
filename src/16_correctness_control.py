@@ -198,7 +198,8 @@ def judge(cfg):
     r = _auc(df, "judge_hintblind")
     result = json.load(open(OUT, encoding="utf-8")) if OUT.exists() else {}
     result["judge_hintblind"] = r
-    result["reference"]["judge_hint_use_auc"] = 0.895
+    ref_path = ROOT / "results" / "auc_judge_hintblind_clean.json"
+    result["reference"]["judge_hint_use_auc"] = json.load(open(ref_path, encoding="utf-8"))["auc_vs_NEG-inert"]["auc"]
     json.dump(_clean(result), open(OUT, "w", encoding="utf-8"), indent=2)
     print(f"[judge_hintblind] wrong-vs-correct AUC = {r['auc']:.3f} "
           f"[{r['ci_lo']:.3f},{r['ci_hi']:.3f}]  (hint-use ref 0.895)", flush=True)

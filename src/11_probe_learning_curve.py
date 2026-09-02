@@ -49,8 +49,8 @@ def main():
                            encoding="utf-8"))["probe"]["chosen_layer"]
 
     df = load_dataset()
-    feats = m06.load_features(df.qid)
-    has = df.qid.isin(feats)
+    feats = m06.load_features(df.tkey)
+    has = df.tkey.isin(feats)
     train_pool = df[(df.split == "train") & df.label.isin(["POS", "NEG-inert"]) & has]
     test = df[(df.split == "test") & df.label.isin(["POS", "NEG-inert"]) & has]
     X_test, y_test = m06.stack(test, feats, "meanpool", layer)
