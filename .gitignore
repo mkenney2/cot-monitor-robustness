@@ -11,3 +11,5 @@ hf_staging/
 review/
 
 # figures/ is tracked: all 13 figures regenerate from results/ via src/10,11,15,17,24.
+# Notebook-generated figure copies (rewritten on every notebook run) stay untracked.
+figures/nb_*.png
