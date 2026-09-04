@@ -1,6 +1,6 @@
 # Hint-types figure: provenance note
 
-Figure: `figures/hint_types.png` (dpi 200), produced by a scratch script that reads only the artifacts below.
+Figure: `figures/hint_types.png` (dpi 200), produced by `src/24_hint_types_figure.py`, which reads only the artifacts below.
 
 ## Counts shown, per hint type
 

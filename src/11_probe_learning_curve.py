@@ -98,6 +98,10 @@ def main():
     print(f"\ntop-half slope = {slope_per_100:+.3f} AUC per +100 train examples", flush=True)
     print(f"-> {op}", flush=True)
 
+    plot(curve, layer, n_seeds)
+
+
+def plot(curve, layer, n_seeds):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -120,5 +124,16 @@ def main():
     print(f"-> {fp}", flush=True)
 
 
+def plot_from_artifact():
+    """Redraw the figure from results/probe_learning_curve.json without refitting."""
+    op = ROOT / "results" / "probe_learning_curve.json"
+    d = json.load(open(op, encoding="utf-8"))
+    plot(d["curve"], d["layer"], d["n_seeds"])
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--figure-only" in sys.argv:
+        plot_from_artifact()
+    else:
+        main()

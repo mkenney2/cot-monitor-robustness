@@ -104,6 +104,7 @@ and an OpenRouter key for the judge (Claude Opus 4.5) and attacker
 | `20_jlens_logitlens_check.py` | diagnostic: J-Lens vs plain logit-lens next-token hit rate on the same activations | CPU (slow) or GPU |
 | `21_jlens_anchor_check.py` | pod diagnostic: readout vs the model's own logits at every depth; fixes the layer convention | GPU |
 | `22_jlens_late.py` | J-Lens rerun at layers 56/60/62 (cache, score, attacked re-score, analysis) as arms `jlens_late` / `jlens_llm_late` | GPU + API |
+| `24_hint_types_figure.py` | hint-types figure (templates, injection rule, per-type yield) from artifacts | CPU |
 
 Every stage writes artifacts to `results/` and human-readable random samples
 to `review/`; analysis scripts only ever read artifacts. All seeds are in

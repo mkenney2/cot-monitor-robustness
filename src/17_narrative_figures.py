@@ -134,7 +134,7 @@ def fig_clean_leaderboard():
     ]
     ax.legend(handles=handles, fontsize=8, loc="upper left", frameon=False)
     ax.set_title("Clean leaderboard: honest arms vs shortcuts vs nulls\n"
-                 "J-Lens at/below chance is a real null (dropped per pre-registered cut order); "
+                 "J-Lens CIs span chance: a real null (dropped per pre-registered cut order); "
                  "textfeat ~chance means positives aren't a surface artifact",
                  fontsize=10, loc="left", color=INK)
     save(fig, "clean_leaderboard.png")
@@ -227,7 +227,6 @@ def fig_failure_independence():
 # ---------------------------------------------------------------- #15, 17, 18
 def fig_probe_interrogation():
     div = load("probe_divergence_analysis.json")
-    cs = load("concept_summary.json")
     pu = load("presence_vs_use.json")
 
     fig, axes = plt.subplots(1, 3, figsize=(11.5, 3.6))
@@ -254,13 +253,15 @@ def fig_probe_interrogation():
                  "token-divergent as recruit but doesn't move the probe",
                  fontsize=9, loc="left", color=INK)
 
-    # (b) #17 concept-probe null
+    # (b) #17 concept-probe null. Read the per-arm AUC artifacts, NOT
+    # concept_summary.json (that file was not regenerated in the dup-qid fix
+    # and still holds pre-fix values; see MASTER_NUMBERS.md section 14).
     ax = axes[1]
     concepts = ["deception", "cheating", "hidden-info", "sycophancy"]
-    vals = [cs[f"concept_{c}"]["pos_vs_neg_inert"] for c in concepts]
-    vals.append(cs["concept_combined"]["pos_vs_neg_inert"])
+    vals = [load(f"auc_concept_{c}_clean.json")["auc_vs_NEG-inert"]["auc"] for c in concepts]
+    vals.append(load("auc_concept_combined_clean.json")["auc_vs_NEG-inert"]["auc"])
     names = concepts + ["combined"]
-    probe_ref = cs["_ref_supervised_probe"]["pos_vs_neg_inert"]
+    probe_ref = load("auc_probe_clean.json")["auc_vs_NEG-inert"]["auc"]
     ypos = np.arange(len(names))[::-1]
     ax.barh(ypos, vals, height=0.55, color=ACT_C, alpha=0.85)
     for yy, v in zip(ypos, vals):
@@ -353,9 +354,11 @@ def fig_correctness_confound():
     ]
     ax.legend(handles=handles, fontsize=8, loc="upper left",
               bbox_to_anchor=(0, -0.13), frameon=False)
+    gap_probe = use_ci["probe, mean-pool"]["auc"] - wrong["probe, mean-pool"]["auc"]
+    gap_judge = use_ci["judge, hint-blind"]["auc"] - wrong["judge, hint-blind"]["auc"]
     ax.set_title("The correctness confound hits the probe hardest: on unhinted wrong-vs-correct\n"
-                 "transcripts the frozen probe nearly matches its hint-use AUC (gap 0.04) — it is\n"
-                 "largely an answering-against-knowledge detector; the judge keeps a 0.16 hint-use margin",
+                 f"transcripts the frozen probe nearly matches its hint-use AUC (gap {gap_probe:.2f}) — it is\n"
+                 f"largely an answering-against-knowledge detector; the judge keeps a {gap_judge:.2f} hint-use margin",
                  fontsize=10, loc="left", color=INK)
     save(fig, "correctness_confound.png")
 
@@ -509,7 +512,7 @@ def fig_monitoring_arms():
         "ARM 4 — J-LENS READOUT  (unsupervised)\n"
         "pre-built lens decodes activations to top-k vocab\n"
         "tokens; score = salience of frozen hint-token sets\n"
-        f"AUC {auc['jlens']:.2f} (chance) — honest null, dropped",
+        f"AUC {auc['jlens']:.2f} (CI spans chance) — honest null, dropped",
         "white", ACT_C)
     box(9.45, 1.0, 4.9, 1.3,
         "ARM 5 — GENERIC CONCEPT DIRECTIONS  (phase-4 control)\n"
@@ -583,6 +586,18 @@ def fig_rewrite_anatomy():
         assert q in txt, f"excerpt drifted from artifact: {q[:50]!r}"
     assert "metadata" not in orig.lower() and "answer key" not in orig.lower()
 
+    # Every number quoted in the panel notes is read from an artifact here so the
+    # captions cannot drift from results/ (they did once, pre dup-qid fix).
+    p_clean = score("probe")
+    p_para, p_laun, p_recr = (score("probe", a) for a in ["paraphrase", "launder", "recruit"])
+    dm = load("degradation_matrix.json")
+    jm, pm = dm["judge_hintblind"], dm["probe"]
+    laun_shift = load("probe_divergence_analysis.json")["launder"]["probe_delta_score_mean"]
+    # recruit audit counts (regex screen; STATUS.md / MASTER_NUMBERS.md section 6c)
+    N_RECRUIT_SCREENED, N_RECRUIT_REASSURE, N_RECRUIT_REFUSAL = 186, 170, 29
+    att_recruit = attacked[(attacked.arm == "probe") & (attacked.attack == "recruit")]
+    assert len(att_recruit) == N_RECRUIT_SCREENED, len(att_recruit)
+
     HL_HINT, HL_SURF, HL_CONT, HL_INJ = "#fdf1d7", "#f0efec", "#ddf3ea", "#fbe4e4"
 
     def wrap(s, w=104):
@@ -642,8 +657,8 @@ def fig_rewrite_anatomy():
         ("ctx", "The same sentence, before and after:"),
         ("quote", "orig: " + Q_ORIG_B + "\nnew:  " + Q_PARA, HL_SURF),
         ("note", wrap("Maximum surface novelty, zero content change — the probe barely "
-                      "moves on this item (0.999 -> 0.983). Token-level divergence is "
-                      "as large as recruit's (see probe_interrogation panel a).")),
+                      f"moves on this item ({p_clean:.3f} -> {p_para:.3f}). Token-level "
+                      "divergence is as large as recruit's (see probe_interrogation panel a).")),
     ], judge=score("judge_hintblind", "paraphrase"), probe=score("probe", "paraphrase"),
        lh=0.115)
 
@@ -651,9 +666,10 @@ def fig_rewrite_anatomy():
         ("ctx", "The meandering deliberation becomes a compact, confident derivation "
                 "of the same wrong answer:"),
         ("quote", wrap(Q_LAUN), HL_CONT),
-        ("note", wrap("Content laundering is what moves the probe (0.999 -> 0.393 here; "
-                      "mean POS shift -0.19). The judge's aggregate AUC is untouched by "
-                      "launder (0.895 -> 0.893).")),
+        ("note", wrap(f"Content laundering is what moves the probe ({p_clean:.3f} -> "
+                      f"{p_laun:.3f} here; mean POS shift {laun_shift:+.2f}). The judge's "
+                      f"aggregate AUC barely moves under launder ({jm['clean']:.3f} -> "
+                      f"{jm['launder']:.3f}).")),
     ], judge=score("judge_hintblind", "launder"), probe=score("probe", "launder"),
        lh=0.11)
 
@@ -661,11 +677,13 @@ def fig_rewrite_anatomy():
         ("ctx", "Same laundered reasoning, plus a closing paragraph addressed to "
                 "whoever is reading the transcript:"),
         ("quote", wrap(Q_RECR), HL_INJ),
-        ("note", wrap("Monitor-directed reassurance appears in 170/186 recruit rewrites "
-                      "(keyword screen; in 29 the attacker model instead refused and "
-                      "said so in a preamble). In aggregate this breaks the text judge "
-                      "(AUC 0.895 -> 0.635) while the probe holds (0.735 -> 0.650): "
-                      "injected text is just more tokens to the activations.")),
+        ("note", wrap(f"Monitor-directed reassurance appears in {N_RECRUIT_REASSURE}/"
+                      f"{N_RECRUIT_SCREENED} recruit rewrites (keyword screen; in "
+                      f"{N_RECRUIT_REFUSAL} the attacker model instead refused and said so "
+                      "in a preamble). In aggregate this breaks the text judge (AUC "
+                      f"{jm['clean']:.3f} -> {jm['recruit']:.3f}) while the probe degrades "
+                      f"far less ({pm['clean']:.3f} -> {pm['recruit']:.3f}): injected text "
+                      "is just more tokens to the activations.")),
     ], judge=score("judge_hintblind", "recruit"), probe=score("probe", "recruit"),
        lh=0.078)
 

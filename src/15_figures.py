@@ -9,6 +9,8 @@ Reads results/scores_clean.parquet + results/scores_attacked.parquet (local).
 Writes figures/score_distributions.png
 """
 
+import json
+
 import matplotlib
 import numpy as np
 import pandas as pd
@@ -46,15 +48,21 @@ def main():
         s = att[(att.arm == arm) & (att.split == "test") & (att.attack == attack)]
         return s[s.label.isin(["POS", "NEG-inert"])]
 
+    # Title AUCs come from the saved artifact (never typed in), so the figure
+    # cannot drift from results/degradation_matrix.json.
+    with open(ROOT / "results" / "degradation_matrix.json", encoding="utf-8") as f:
+        dm = json.load(f)
+    j, p = dm["judge_hintblind"], dm["probe"]
+
     fig, axes = plt.subplots(2, 2, figsize=(10, 7))
     panel(axes[0, 0], clean_test("judge_hintblind"),
-          "Text judge — CLEAN (AUC 0.895)", "suspicion score (0-100)")
+          f"Text judge — CLEAN (AUC {j['clean']:.3f})", "suspicion score (0-100)")
     panel(axes[0, 1], att_test("judge_hintblind", "recruit"),
-          "Text judge — RECRUIT attack (AUC 0.635)", "suspicion score (0-100)")
+          f"Text judge — RECRUIT attack (AUC {j['recruit']:.3f})", "suspicion score (0-100)")
     panel(axes[1, 0], clean_test("probe"),
-          "Activation probe — CLEAN (AUC 0.735)", "probe P(hint-use)")
+          f"Activation probe — CLEAN (AUC {p['clean']:.3f})", "probe P(hint-use)")
     panel(axes[1, 1], att_test("probe", "recruit"),
-          "Activation probe — RECRUIT attack (AUC 0.650)", "probe P(hint-use)")
+          f"Activation probe — RECRUIT attack (AUC {p['recruit']:.3f})", "probe P(hint-use)")
     axes[0, 0].legend(fontsize=8, loc="upper center")
     fig.suptitle("Recruit attack collapses the text judge's separation; the probe's holds",
                  fontsize=12, y=0.99)
