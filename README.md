@@ -37,6 +37,8 @@ correlated per item.
   decomposition showing the hint-*presence* direction alone does not explain
   the probe's hint-*use* AUC; a correctness-confound control.
 
+All figures are in [`figures/`](figures/) (design schematics, clean leaderboard, score distributions, rewrite anatomy, degradation heatmap and CIs, failure independence, probe learning curve / interrogation / correctness confound); every number in them is read from `results/` artifacts by `src/10`, `11`, `15`, `17`, `24`.
+
 ![Degradation under attack](figures/degradation_with_cis.png)
 ![Failure independence](figures/failure_independence.png)
 

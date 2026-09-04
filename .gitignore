@@ -1,7 +1,6 @@
 # Artifacts are downloaded from the Hugging Face dataset, not committed.
 data/
 results/
-figures/*
 logs/
 __pycache__/
 *.pyc
@@ -11,8 +10,4 @@ hf_staging/
 # in the gated dataset, not in this repo).
 review/
 
-# Keep the headline figures used by the README.
-!figures/degradation_with_cis.png
-!figures/failure_independence.png
-!figures/clean_leaderboard.png
-!figures/hint_types.png
+# figures/ is tracked: all 13 figures regenerate from results/ via src/10,11,15,17,24.
